@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"reflect"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -45,36 +46,46 @@ func rpcParams2XML(rpc interface{}) (string, error) {
 }
 
 func rpc2XML(value interface{}) (string, error) {
-	out := "<value>"
+	if enc, ok := value.(interface {
+		MarshalRpcXml(v interface{}) ([]byte, error)
+	}); ok {
+		bs, err := enc.MarshalRpcXml(value)
+		return string(bs), err
+	}
+	var buf = new(strings.Builder)
+	buf.WriteString("<value>")
+	// out := "<value>"
 	switch reflect.ValueOf(value).Kind() {
 	case reflect.Int:
-		out += fmt.Sprintf("<int>%d</int>", value.(int))
+		_WriteTagString(buf, "int", strconv.Itoa(value.(int)))
 	case reflect.Float64:
-		out += fmt.Sprintf("<double>%f</double>", value.(float64))
+		s := strconv.FormatFloat(value.(float64), 'f', 8, 64)
+		_WriteTagString(buf, "double", s)
 	case reflect.String:
-		out += string2XML(value.(string))
+		buf.WriteString(string2XML(value.(string)))
 	case reflect.Bool:
-		out += bool2XML(value.(bool))
+		buf.WriteString(bool2XML(value.(bool)))
 	case reflect.Struct:
 		if reflect.TypeOf(value).String() != "time.Time" {
-			out += struct2XML(value)
+			buf.WriteString(struct2XML(value))
 		} else {
-			out += time2XML(value.(time.Time))
+			buf.WriteString(time2XML(value.(time.Time)))
 		}
 	case reflect.Slice, reflect.Array:
 		// FIXME: is it the best way to recognize '[]byte'?
 		if reflect.TypeOf(value).String() != "[]uint8" {
-			out += array2XML(value)
+			buf.WriteString(array2XML(value))
 		} else {
-			out += base642XML(value.([]byte))
+			buf.WriteString(base642XML(value.([]byte)))
 		}
 	case reflect.Ptr:
 		if reflect.ValueOf(value).IsNil() {
-			out += "<nil/>"
+			buf.WriteString("<nil/>")
 		}
 	}
-	out += "</value>"
-	return out, nil
+	buf.WriteString("</value>")
+	return buf.String(), nil
+	// return out, nil
 }
 
 func bool2XML(value bool) string {
