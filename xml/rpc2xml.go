@@ -46,46 +46,59 @@ func rpcParams2XML(rpc interface{}) (string, error) {
 }
 
 func rpc2XML(value interface{}) (string, error) {
-	if enc, ok := value.(interface {
-		MarshalRpcXml(v interface{}) ([]byte, error)
-	}); ok {
-		bs, err := enc.MarshalRpcXml(value)
-		return string(bs), err
+	// if enc, ok := value.(interface {
+	// 	MarshalRpcXml(v interface{}) ([]byte, error)
+	// }); ok {
+	// 	bs, err := enc.MarshalRpcXml(value)
+	// 	return string(bs), err
+	// }
+	if enc, ok := value.(XmlRpcMarshaler); ok {
+		res, err := enc.MarshalXmlRpcValue(value)
+		return string(res), err
 	}
-	var buf = new(strings.Builder)
+	var buf = &strings.Builder{}
 	buf.WriteString("<value>")
-	// out := "<value>"
-	switch reflect.ValueOf(value).Kind() {
-	case reflect.Int:
-		_WriteTagString(buf, "int", strconv.Itoa(value.(int)))
-	case reflect.Float64:
-		s := strconv.FormatFloat(value.(float64), 'f', 8, 64)
-		_WriteTagString(buf, "double", s)
-	case reflect.String:
+	switch curr := value.(type) {
+	case int:
+		buf.WriteString("<int>")
+		buf.WriteString(strconv.Itoa(value.(int)))
+		buf.WriteString("</int>")
+	case float64:
+		s := strconv.FormatFloat(value.(float64), 'f', 6, 64)
+		buf.WriteString("<double>")
+		buf.WriteString(s)
+		buf.WriteString("</double>")
+	case string:
 		buf.WriteString(string2XML(value.(string)))
-	case reflect.Bool:
+	case bool:
 		buf.WriteString(bool2XML(value.(bool)))
-	case reflect.Struct:
-		if reflect.TypeOf(value).String() != "time.Time" {
-			buf.WriteString(struct2XML(value))
-		} else {
-			buf.WriteString(time2XML(value.(time.Time)))
-		}
-	case reflect.Slice, reflect.Array:
-		// FIXME: is it the best way to recognize '[]byte'?
-		if reflect.TypeOf(value).String() != "[]uint8" {
-			buf.WriteString(array2XML(value))
-		} else {
-			buf.WriteString(base642XML(value.([]byte)))
-		}
-	case reflect.Ptr:
-		if reflect.ValueOf(value).IsNil() {
+	case []byte:
+		buf.WriteString(base642XML(value.([]byte)))
+	case []interface{}, []int32, []float64, []string:
+		buf.WriteString(array2XML(value))
+	case time.Time:
+		buf.WriteString(time2XML(curr))
+	default:
+		if value == nil /* || reflect.ValueOf(value).IsNil() */ {
 			buf.WriteString("<nil/>")
+		} else {
+			rev := reflect.ValueOf(value)
+			switch rev.Kind() {
+			case reflect.Array, reflect.Slice:
+				buf.WriteString(array2XML(value))
+			case reflect.Pointer:
+				if rev.IsNil() {
+					buf.WriteString("<nil/>")
+				} else {
+					buf.WriteString(struct2XML(value))
+				}
+			default:
+				buf.WriteString(struct2XML(value))
+			}
 		}
 	}
 	buf.WriteString("</value>")
 	return buf.String(), nil
-	// return out, nil
 }
 
 func bool2XML(value bool) string {
@@ -107,7 +120,8 @@ func string2XML(value string) string {
 }
 
 func struct2XML(value interface{}) (out string) {
-	out += "<struct>"
+	buf := strings.Builder{}
+	buf.WriteString("<struct>")
 	for i := 0; i < reflect.TypeOf(value).NumField(); i++ {
 		field := reflect.ValueOf(value).Field(i)
 		field_type := reflect.TypeOf(value).Field(i)
@@ -119,19 +133,24 @@ func struct2XML(value interface{}) (out string) {
 		}
 		field_value, _ := rpc2XML(field.Interface())
 		field_name := fmt.Sprintf("<name>%s</name>", name)
-		out += fmt.Sprintf("<member>%s%s</member>", field_name, field_value)
+		buf.WriteString(fmt.Sprintf("<member>%s%s</member>", field_name, field_value))
 	}
-	out += "</struct>"
+	buf.WriteString("</struct>")
+	out = buf.String()
 	return
 }
 
 func array2XML(value interface{}) (out string) {
-	out += "<array><data>"
-	for i := 0; i < reflect.ValueOf(value).Len(); i++ {
-		item_xml, _ := rpc2XML(reflect.ValueOf(value).Index(i).Interface())
-		out += item_xml
+	var buf = strings.Builder{}
+	buf.WriteString("<array><data>")
+	ref := reflect.ValueOf(value)
+	n := ref.Len()
+	for i := 0; i < n; i++ {
+		item_xml, _ := rpc2XML(ref.Index(i).Interface())
+		buf.WriteString(item_xml)
 	}
-	out += "</data></array>"
+	buf.WriteString("</data></array>")
+	out = buf.String()
 	return
 }
 
