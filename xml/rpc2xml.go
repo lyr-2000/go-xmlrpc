@@ -74,7 +74,7 @@ func rpc2XML(value interface{}) (string, error) {
 		buf.WriteString(bool2XML(value.(bool)))
 	case []byte:
 		buf.WriteString(base642XML(value.([]byte)))
-	case []interface{}, []int32, []float64, []string:
+	case []interface{}, []int, []float64, []string:
 		buf.WriteString(array2XML(value))
 	case time.Time:
 		buf.WriteString(time2XML(curr))
